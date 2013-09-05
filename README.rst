@@ -25,17 +25,21 @@ Installation:
   > python setup.py build
   > cd ..
 
-2) Generate key files:
+2) Generate key files
+
+.. code-block:: shell
 
   > python gen_raw_key.py
 
 3) Have staq fun:
 
+.. code-block:: shell
+
   > ./bob.py -v &
   > ./alice -v
 
 
-* Windows Notes: Use Python X,Y for easy install.
+Windows Users: Use Python X,Y for easy install.
 
 
 Acknowledgements
