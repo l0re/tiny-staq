@@ -1,0 +1,49 @@
+
+Installing
+
+   The  pycodes  package  provides various extensions to Python which are
+   useful  in  developing  and  analyzing error correcting codes and data
+   compression codes.
+
+   Recently I also started adding routines for solving circuit 
+   satisfiability problems in the pySAT module, but pySAT is somewhat
+   incomplete at this point.
+
+  Prerequisites
+
+   You will need the following installed on your system to use pycodes:
+     * Python (preferably version 2.2 or later)
+     * biggles   (optional; only required if you want plotting)
+
+  Installing
+
+   Edit the file setup.py to edit installation options (e.g., if you want
+   to  compile  in  debug  mode  or  optimization  mode.  Then,  in  this
+   directory, execute the command
+
+$ python setup.py install
+
+   to compile the required python extensions and install them globally.
+
+   After  the  installation  completes, you can use pycodes just like any
+   other  python  module.  For  example,  to run the regression tests you
+   could start python and do
+
+>>> import pycodes, pycodes.tests
+>>> pycodes.tests.DoRegressionTests()
+
+   If you don't want to globally install pycodes, you can just compile it
+   in  place  and  use it as a local python module. To do this, uncomment
+   the lines for [build_ext] in setup.cfg and do
+
+$ python setup.py build
+
+   to  compile  everything.  Make  sure  that  the  name of the directory
+   containing  the pycodes module is named pycodes and not something like
+   pycodes-1.0.  To use pycodes, start python in the directory containing
+   the  pycodes  directory.  For example, to run the regression tests you
+   could do
+
+$ python
+>>> import pycodes, pycodes.tests
+>>> pycodes.tests.DoRegressionTests()

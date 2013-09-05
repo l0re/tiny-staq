@@ -1,0 +1,67 @@
+
+\input texinfo
+
+@setfilename pycodes.info
+
+@ifhtml
+@setfilename pycodes.html
+@end ifhtml
+
+@settitle Pycodes Documentation
+@setchapternewpage odd
+
+@contents
+
+@titlepage
+
+@end titlepage
+
+@ifinfo
+@c make sure the following line is @node Top, , , (dir)
+@c since texinfo-every-node-update screws it up
+@node Top, , , (dir)
+@end ifinfo
+
+@ifhtml
+@node Top, Overview, (dir), (dir)
+@end ifhtml
+
+@macro pycomref{name}
+@samp{\name\}
+@end macro
+
+@menu
+* Overview::       
+* Installation and Configuration::
+* The pyLDPC Package::
+* The utils package::
+* Concept Index::
+* LICENSE::
+@end menu
+
+@node Overview, Installation and Configuration, Top, Top
+@chapter Overview
+@include overview.texi
+
+@node Installation and Configuration, The pyLDPC Package, Overview, Top
+@chapter Installing
+@include installing.texi
+
+@node The pyLDPC Package, The utils package , Installation and Configuration, Top
+@chapter The pyLDPC Package
+@include pyLDPC.texi
+
+@node The utils package, LICENSE , The pyLDPC Package, Top
+@chapter The utils package
+@include utils.texi
+
+
+@node LICENSE, Concept Index, The utils package, Top
+@chapter LICENSE
+@include license.texi
+
+@node Concept Index, , LICENSE , Top
+@unnumbered Concept Index
+@printindex cp
+
+@bye

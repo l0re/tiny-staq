@@ -1,0 +1,189 @@
+
+
+The pyLDPC package provides low density parity check (LDPC) codes and
+their dual codes which are low density generator matrix (LDGM) codes.
+To create a new LDPC or LDGM code you can use the @pycomref{LDPCCode} or
+@pycomref{DualLDPCCode} commands to create a new code.  The
+@pycomref{setevidence} command sets the channel evidence and specifies the
+decoding algorithm to use, while the @pycomref{decode} command runs an
+iteration of decoding.  The @pycomref{getbeliefs} command returns the
+computed beliefs.  
+
+@c Use texinfo-all-menus-update to update the menu.
+
+@c Use texinfo-every-node-update to update the nodes.
+@c After calling texinfo-every-node-update make sure
+@c to set the last two args for the first @node command
+@c to ``The pyLDPC Package'' and set the last arg for every other
+@c @node command to ``The pyLDPC Package''.  You can do the latter
+@c using the following macro:
+@c (fset 'insert-commands-for-up-field
+@c   "\C-s@node\C-e, The pyLDPC Package")
+
+@menu
+* Quantization::
+* Channel Coding::
+* Extending pyLDPC::
+@end menu
+
+@c The following examples are obtained from the pycodes.pyLDPC docstring.
+@c Update that in pyLDPC.c and then copy the result to here.
+
+@node Quantization, Channel Coding, The pyLDPC Package, The pyLDPC Package
+@section Quantization
+@cindex Quantization
+
+@subsection Binary Erasure Quantization Example
+@cindex Binary Erasure Quantization
+
+The following sequence of python commands creates the dual of a
+Hamming code, sets the evidence to correspond to the bits
+@samp{[0,1,?,1,?,?,?]}, decodes by finding a codeword to match the
+unerased bits, and prints out the result:
+
+@example
+>>> from pycodes.pyLDPC import DualLDPCCode
+>>> code = DualLDPCCode(7,4,12,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])
+>>> code.setevidence(ev=[1,-1,0,-1,0,0,0],alg='BECQuant')
+>>> code.decode()
+>>> beliefs = code.getbeliefs()
+>>> print beliefs[0:3] # first K beliefs are for hidden vars
+[1.0, -1.0, 1.0]
+@end example
+
+Note that the beliefs are in something like log-likelihood-ratio
+format.  To map the beliefs into zeros and ones you can do
+
+@example
+>>> comp = map(lambda x: x < 0,beliefs[0:3])
+>>> print comp
+[0, 1, 0]
+@end example
+
+In order to see what codeword is produced from the compressed
+result, you can use the EncodeFromLinkArray utility as follows:
+
+@example
+>>> from pycodes.utils.encoders import EncodeFromLinkArray
+>>> r = EncodeFromLinkArray(comp,7,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])
+>>> print r
+[0, 1, 1, 1, 0, 1, 0]
+@end example
+
+Note that the first, second, and fourth positions of the codeword
+match the source.
+
+@subsection Binary Symmetric Quantization Example
+@cindex Binary Symmetric Quantization
+
+The following sequence of python commands creates the dual of a
+length 3000 (3,6) Gallager code, sets the evidence to be a random
+binary word, quantizes the result using the AccBitFlip algorithm,
+and counts the percentage of distorted bits:
+
+@example
+>>> from pycodes.utils.CodeMaker import make_H_gallager
+>>> from pycodes.utils.channels import GetRandomBinaryCodeword
+>>> L = make_H_gallager(3000,3,6) # make the code
+>>> E = reduce(lambda x,y:x+y,map(lambda z:len(z),L))#count edges in code
+>>> code = DualLDPCCode(3000,1500,E,L)
+>>> source = GetRandomBinaryCodeword(3000)
+>>> ev = map(lambda b: 1 - 2*b,source) # map bits to log-likelihoods
+>>> code.setevidence(ev,alg='AccBitFlip')
+>>> for iteration in range(25):
+...    code.decode()
+>>> beliefs = code.getbeliefs()[0:1500]
+>>> comp = map(lambda x: x < 0,beliefs) # map log-likelihoods to bits
+>>> result = EncodeFromLinkArray(comp,3000,L)
+>>> diffs = reduce(lambda x,y:x+y,map(lambda r,s: r!=s,result,source))
+>>> print (diffs/3000.0 > 0.14 and diffs/3000.0 < .17)
+1
+>>> # the above insures that the number of diffs is reasonable.
+@end example
+
+@node Channel Coding, Extending pyLDPC, Quantization, The pyLDPC Package
+@section Channel Coding
+@cindex Channel Coding
+
+@subsection Binary Erasure Channel Example
+@cindex Binary Erasure Channel
+
+@example
+>>> from pycodes.pyLDPC import LDPCCode
+>>> code = LDPCCode(7,4,12,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])
+>>> # Set the channel evidence to the all-zeros codeword with 2 erasures
+>>> code.setevidence(ev=[1,1,0,0,1,1,1],alg='SumProductBP')
+>>> for iteration in range(25):
+...    code.decode()
+>>> beliefs = code.getbeliefs()
+>>> codeword = map(lambda x: x > 0.5,beliefs)
+>>> print codeword
+[0, 0, 0, 0, 0, 0, 0]
+@end example
+
+@subsection Binary Symmetric Channel Example
+@cindex Binary Symmetric Channel
+
+@example
+>>> from pycodes.pyLDPC import LDPCCode
+>>> from pycodes.utils.CodeMaker import make_H_gallager
+>>> from pycodes.utils.channels import BSC
+>>> L = make_H_gallager(3000,3,6) # make the code
+>>> E = reduce(lambda x,y:x+y,map(lambda z:len(z),L))#count edges in code
+>>> code = LDPCCode(3000,1500,E,L)
+>>> # Set the channel evidence to the all-zeros codeword through a BSC
+>>> ev = BSC([0]*3000,0.05)
+>>> code.setevidence(ev,alg='SumProductBP')
+>>> for iteration in range(25):
+...    code.decode()
+>>> beliefs = code.getbeliefs()
+>>> result = map(lambda x: x > 0.5,beliefs)
+>>> print 'num decoding errors = ' + `reduce(lambda a,b:a+b,result)`
+num decoding errors = 0
+@end example
+
+@node Extending pyLDPC,  , Channel Coding, The pyLDPC Package
+@section Extending pyLDPC
+@cindex Adding new decoding algorithms
+
+You can easily extend the pyLDPC package by adding additional decoding
+algorithms for channel coding or quantization.  To add a new decoding
+algorithm for the LDPCCode or DualLDPCCode object, you need to do the
+following:
+
+@enumerate 
+@item Define a new instance of the @samp{CodeGraphAlgorithm} or
+@samp{DualCodeGraphAlgorithm} data structure.
+
+@item Add the new algorithm to the @samp{CodeGraphAlgorithms} or
+@samp{DualCodeGraphAlgorithms} data
+structure in @samp{c_src/pyLDPC/CodeGraphAlgorithms.c} or
+@samp{c_src/pyLDPC/CodeGraphAlgorithms.c}.
+
+@item Add the
+name of the algorithm to the @samp{CodeGraphAlgorithmNames} or
+@samp{DualCodeGraphAlgorithmNames} array in
+@samp{c_src/pyLDPC/CodeGraphAlgorithms.c} or
+@samp{c_src/pyLDPC/DualCodeGraphAlgorithms.c}.  
+
+@end enumerate
+
+The @samp{CodeGraphAlgorithm} and @samp{DualCodeGraphAlgorithm} data
+structure defined in 
+@samp{c_src/pyLDPC/CodeGraphAlgorithms.h} and
+@samp{c_src/pyLDPC/DualCodeGraphAlgorithms.h} have a field for the
+algorithm name, a @samp{clientData} field for storing data required by
+the algorithm, fields for functions to set evidence, get beliefs,
+initialize, deallocate the algorithm, do a an iteration of decoding,
+and possibly other actions as well.  Once you provide these functions
+and add your algorithm and its name to the appropriate arrays, you can
+access it through python just like the existing algorithms.  For
+example, if you created a new algorithm called @samp{my_decode}, you
+could use it by replacing the @samp{code.setevidence} command in the
+examples above with 
+
+@example
+>>> code.setevidence(ev,alg='my_decode')
+@end example
+
+

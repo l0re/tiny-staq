@@ -1,0 +1,828 @@
+
+/*
+     Copyright 2003 Mitsubishi Electric Research Laboratories All Rights
+     Reserved.  Permission to use, copy and modify this software and its
+     documentation without fee for educational, research and non-profit
+     purposes, is hereby granted, provided that the above copyright
+     notice and the following three paragraphs appear in all copies.      
+
+     To request permission to incorporate this software into commercial
+     products contact:  Vice President of Marketing and Business         
+     Development;  Mitsubishi Electric Research Laboratories (MERL), 201
+     Broadway, Cambridge, MA   02139 or <license@merl.com>.        
+                                                                               
+     IN NO EVENT SHALL MERL BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, 
+     SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST        
+     PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS 
+     DOCUMENTATION, EVEN IF MERL HAS BEEN ADVISED OF THE POSSIBILITY OF
+     SUCH DAMAGES.
+
+     MERL SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+     LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+     FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN
+     "AS IS" BASIS, AND MERL HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE,
+     SUPPORT, UPDATES, ENHANCEMENTS OR MODIFICATIONS.
+*/
+
+#include <strings.h>
+
+#include "Python.h"
+#include "misc.h"
+#include "CodeGraph.h"
+#include "DualCodeGraph.h"
+#include "CodeGraphAlgorithms.h"
+#include "DualCodeGraphAlgorithms.h"
+
+/* ----------------------------------------------------------------------
+ *
+ * This file implements the interface between the rest of the C code
+ * and python.  It provides the pyLDPC module which contains the
+ * LDPCCode and DualLDPCCode classes.
+ *
+ * ------------------------------------------------------------------- */
+
+
+#define MODULE_NAME "pyLDPC"
+#define INIT_FUNC_NAME initpyLDPC
+
+#define MODULE__DOC__ "\n\n" \
+"The " MODULE_NAME " module provides functions for belief propagation\n" \
+"decoding of low density codes.  To see a list of\n" \
+"functions and classes type do\n\n" \
+"    print " MODULE_NAME ".__dict__.keys()\n\n" \
+"To see documentation for a particular function or class, do\n\n" \
+"    print <funcName>.__doc__\n\n" \
+"\n"\
+"\n\nBinary Erasure Quantization Example\n\n"\
+"The following sequence of python commands creates the dual of a\n"\
+"Hamming code, sets the evidence to correspond to the bits\n"\
+"[0,1,?,1,?,?,?], decodes by finding a codeword to match the\n"\
+"unerased bits, and prints out the result:\n\n"\
+"For example, the following python commands create\n"\
+"the dual of a Hamming code, set the evidence to correspond to the bits\n"\
+"[0,1,?,1,?,?,?] where ? indicates an erasure, decode by finding\n"\
+"a codeword to match the unerased bits, and print out the result:\n\n"\
+">>> from pycodes.pyLDPC import DualLDPCCode\n"\
+">>> code = DualLDPCCode(7,4,12,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])\n"\
+">>> code.setevidence(ev=[1,-1,0,-1,0,0,0],alg='BECQuant')\n"\
+">>> code.decode()\n"\
+">>> beliefs = code.getbeliefs()\n"\
+">>> print beliefs[0:3] # first K beliefs are for hidden vars\n"\
+"[1.0, -1.0, 1.0]\n\n"\
+"\n"\
+"Note that the beliefs are in something like log-likelihood-ratio\n"\
+"format.  To map the beliefs into zeros and ones you can do\n\n"\
+">>> comp = map(lambda x: x < 0,beliefs[0:3])\n"\
+">>> print comp\n"\
+"[0, 1, 0]\n\n"\
+"\n"\
+"In order to see what codeword is produced from the compressed\n"\
+"result, you can use the EncodeFromLinkArray utility as follows:\n\n"\
+">>> from pycodes.utils.encoders import EncodeFromLinkArray\n"\
+">>> r = EncodeFromLinkArray(comp,7,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])\n"\
+">>> print r\n"\
+"[0, 1, 1, 1, 0, 1, 0]\n\n"\
+"Note that the first, second, and fourth positions of the codeword\n"\
+"match the source.\n\n"\
+"\n"\
+"\n\nBinary Symmetric Quantization Example\n\n"\
+"The following sequence of python commands creates the dual of a\n"\
+"length 3000 (3,6) Gallager code, sets the evidence to be a random\n"\
+"binary word, quantizes the result using the AccBitFlip algorithm,\n"\
+"and counts the percentage of distorted bits:\n\n"\
+">>> from pycodes.utils.CodeMaker import make_H_gallager\n"\
+">>> from pycodes.utils.channels import GetRandomBinaryCodeword\n"\
+">>> L = make_H_gallager(3000,3,6) # make the code\n"\
+">>> E = reduce(lambda x,y:x+y,map(lambda z:len(z),L))#count edges in code\n"\
+">>> code = DualLDPCCode(3000,1500,E,L)\n"\
+">>> source = GetRandomBinaryCodeword(3000)\n"\
+">>> ev = map(lambda b: 1 - 2*b,source) # map bits to log-likelihoods\n"\
+">>> code.setevidence(ev,alg='AccBitFlip')\n"\
+">>> for iteration in range(25):\n"\
+"...    code.decode()\n"\
+">>> beliefs = code.getbeliefs()[0:1500]\n"\
+">>> comp = map(lambda x: x < 0,beliefs) # map log-likelihoods to bits\n"\
+">>> result = EncodeFromLinkArray(comp,3000,L)\n"\
+">>> diffs = reduce(lambda x,y:x+y,map(lambda r,s: r!=s,result,source))\n"\
+">>> print (diffs/3000.0 > 0.14 and diffs/3000.0 < .17)\n"\
+"1\n"\
+">>> # the above insures that the number of diffs is reasonable.\n\n\n"\
+"\n"\
+"Binary Erasure Channel Example\n\n"\
+">>> from pycodes.pyLDPC import LDPCCode\n"\
+">>> code = LDPCCode(7,4,12,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])\n"\
+">>> # Set the channel evidence to the all-zeros codeword with 2 erasures\n"\
+">>> code.setevidence(ev=[1,1,0,0,1,1,1],alg='SumProductBP')\n"\
+">>> for iteration in range(25):\n"\
+"...    code.decode()\n"\
+">>> beliefs = code.getbeliefs()\n"\
+">>> codeword = map(lambda x: x > 0.5,beliefs)\n"\
+">>> print codeword\n"\
+"[0, 0, 0, 0, 0, 0, 0]\n\n"\
+"\n"\
+"Binary Symmetric Channel Example\n\n"\
+">>> from pycodes.pyLDPC import LDPCCode\n"\
+">>> from pycodes.utils.CodeMaker import make_H_gallager\n"\
+">>> from pycodes.utils.channels import BSC\n"\
+">>> L = make_H_gallager(3000,3,6) # make the code\n"\
+">>> E = reduce(lambda x,y:x+y,map(lambda z:len(z),L))#count edges in code\n"\
+">>> code = LDPCCode(3000,1500,E,L)\n"\
+">>> # Set the channel evidence to the all-zeros codeword through a BSC\n"\
+">>> ev = BSC([0]*3000,0.05)\n"\
+">>> code.setevidence(ev,alg='SumProductBP')\n"\
+">>> for iteration in range(25):\n"\
+"...    code.decode()\n"\
+">>> beliefs = code.getbeliefs()\n"\
+">>> result = map(lambda x: x > 0.5,beliefs)\n"\
+">>> print 'num decoding errors = ' + `reduce(lambda a,b:a+b,result)`\n"\
+"num decoding errors = 0\n\n"
+
+typedef struct {
+  PyObject_HEAD
+  PyObject	*x_attr;	/* Attributes dictionary */
+  CodeGraph*    theCode;
+} PythonLDPCCode;
+
+typedef struct {
+  PyObject_HEAD
+  PyObject	*x_attr;	/* Attributes dictionary */
+  DualCodeGraph*    theCode;
+} PythonDualLDPCCode;
+
+
+staticforward PyTypeObject LDPCCodeType;
+staticforward PyTypeObject DualLDPCCodeType;
+
+#define is_PythonLDPCCode(v)		((v)->ob_type == &LDPCCodeType)
+#define is_PythonDualLDPCCode(v)	((v)->ob_type == &DualLDPCCodeType)
+
+
+double* GetPyFloatListToArrayOfDoubles(const char*const argName,
+				       const int requiredSize,
+				       const double minVal,
+				       const double maxVal,
+				       PyObject* pyList) {
+  int i, size;
+  double* result;
+  PyObject* item;
+
+  assert(PyList_Check(pyList));
+  size = PyList_GET_SIZE(pyList);
+  if (requiredSize != size) {
+    PyErr_Format(PyExc_TypeError,"%s:list size should be %i not %i",
+		 argName,requiredSize,size);
+    return NULL;
+  }
+  result = SafeCalloc(requiredSize,sizeof(double));
+  for (i=0; i<requiredSize; i++) {
+    item = PyList_GET_ITEM(pyList,i);
+    if (PyInt_Check(item)) result[i] = PyInt_AsLong(item);
+    else if (PyFloat_Check(item)) result[i]=PyFloat_AsDouble(item);
+    else {
+      PyErr_Format(PyExc_TypeError,"%s:element %i not an int or float",
+		   argName,i);
+      free(result);
+      return NULL;
+    }
+    if (result[i] > maxVal || result[i] < minVal) {
+      PyErr_Format(PyExc_TypeError,"%s:element %i not in required range",
+		   argName,i);
+      free(result);
+      return NULL;
+    }
+  }
+  return result;
+}
+
+
+int* GetIntListToArray(PyObject* pyList, int* size,
+		       const int minVal, const int maxVal) {
+  int i;
+  int* result;
+  PyObject* item;
+
+  assert(PyList_Check(pyList));
+  *size = PyList_GET_SIZE(pyList);
+  result = SafeCalloc(*size,sizeof(int));
+  for (i=0; i<*size; i++) {
+    item = PyList_GET_ITEM(pyList,i);
+    if (! PyInt_Check(item)) {
+      PyErr_Format(PyExc_TypeError,"element %i not an integer",i);
+      free(result);
+      return NULL;
+    }
+    result[i]=PyInt_AsLong(item);
+    if (result[i] > maxVal || result[i] < minVal) {
+      PyErr_Format(PyExc_TypeError,"element %i = %i not in [%i,%i]",
+		   i,result[i],minVal,maxVal);
+      free(result);
+      return NULL;
+    }
+  }
+  return result;
+}
+
+/* ----------------------------------------------------------------------
+//
+// FUNCTION:	GetListOfIntListsToArray
+//
+// INPUTS:	pyList:        A Python list object.
+//              numSubLists:   *numSubLists is set to PyList_Size(pyList).
+//              subListSizes:  *subListSizes is set to a newly allocated
+//                             array of length *numSubLists where 
+//                             *subListSizes[i] gets the length of the 
+//                             ith subList.
+//              minVal:        Minimum allowed value for element.
+//              maxVal:        Maximum allowed value for element.
+//
+// RETURNS:	Returns a newly allocated array of arrays containing the
+//              list of lists of integers in pyList.  Both the result
+//              returned and result[i] from 0 to *numSubLists - 1 need
+//              to be deallocated by the caller.
+//
+//              If an error occurs, NULL is returned and no deallocation
+//              of anything is required.
+//
+// MODIFIED:	Fri Jun 06, 2003
+//              Mon Jun 30, 2003: added minVal, maxVal args (EM).
+//
+// -------------------------------------------------------------------- */
+
+int** GetListOfIntListsToArray(PyObject* pyList, int* numSubLists,
+			       int** subListSizes,
+			       const int minVal, const int maxVal) {
+  PyObject* subList;
+  int listIndex, listSize, itemToFree;
+  int **result;
+
+  listSize = PyList_Size(pyList);
+  if ( (*numSubLists != -1) && (*numSubLists != listSize) ) {
+    PyErr_Format(PyExc_TypeError,"%s%i%s%i",
+		 "expected list of size ", *numSubLists, 
+		 ", but got list of size ", listSize);
+    return NULL;
+  }
+  *numSubLists = listSize;
+  result = SafeCalloc(listSize,sizeof(int*));
+  *subListSizes = SafeCalloc(listSize,sizeof(int*));
+  
+  for (listIndex=0; listIndex<listSize; listIndex++) {
+    subList=PyList_GET_ITEM(pyList,listIndex);
+    if (! PyList_Check(subList)) {
+      PyErr_Format(PyExc_TypeError,"%s%i%s",
+		   "sub list ",listIndex,", was not a valid list.");
+      goto cleanup_after_error;
+    }
+    result[listIndex]=GetIntListToArray(subList,&((*subListSizes)[listIndex]),
+					minVal,maxVal);
+    if (NULL == result[listIndex]) goto cleanup_after_error;
+  }
+
+  return result;
+
+ cleanup_after_error:
+  assert(listIndex <= listSize);
+  listIndex--;
+  for (itemToFree=0; itemToFree<listIndex; itemToFree++) 
+    free(result[itemToFree]);
+  free(result);
+  free(*subListSizes);
+  return NULL;
+}
+
+static PythonLDPCCode* MakeCodeFromPythonSparse(const int n, const int k,
+						const int m, 
+						const int numEdges,
+						PyObject* eList){
+  int** linkArrays;
+  int* linkArrayLengths;
+  PythonLDPCCode* result;
+  int j;
+  int listSize = m;
+
+  linkArrays = GetListOfIntListsToArray(eList,&listSize,&linkArrayLengths,
+					0,n-1);
+  if (NULL == linkArrays) return NULL;
+
+  result = PyObject_NEW(PythonLDPCCode, &LDPCCodeType);
+  if (result != NULL) {
+    result->x_attr = NULL;
+    result->theCode = CreateGraphFromLinkArrays(n,k,m,numEdges,
+						linkArrayLengths,
+						linkArrays);
+  }
+
+  for (j=0; j<m; j++) {
+    free(linkArrays[j]);
+  }
+  free(linkArrayLengths); free(linkArrays);
+  return result;
+}
+
+
+static PythonDualLDPCCode* MakeDualCodeFromPythonSparse(const int n, 
+							const int k,
+							const int m, 
+							const int numEdges,
+							PyObject* eList){
+  int** linkArrays;
+  int* linkArrayLengths;
+  PythonDualLDPCCode* result;
+  int j;
+  int listSize = m;
+
+  linkArrays = GetListOfIntListsToArray(eList,&listSize,&linkArrayLengths,
+					0,n-1);
+  if (NULL == linkArrays) return NULL;
+
+  result = PyObject_NEW(PythonDualLDPCCode, &DualLDPCCodeType);
+  if (result != NULL) {
+    result->x_attr = NULL;
+    result->theCode = CreateDualGraphFromLinkArrays(n,k,m,numEdges,
+						    linkArrayLengths,
+						    linkArrays);
+  }
+
+  for (j=0; j<m; j++) {
+    free(linkArrays[j]);
+  }
+  free(linkArrayLengths); free(linkArrays);
+  return result;
+}
+
+
+#define LDPC_NEW__DOC__ "LDPCCode(n,k,e,H,m):\n" \
+"Allocates a new LDPCCode object based on the following arguments\n" \
+"n = number of columns in H\n" \
+"k = True dimension of H\n" \
+"e = Total number of ones in parity check matrix H, or equivalently,\n" \
+"    number of edges in the code graph.\n " \
+"H = parity check matrix as list of rows indicating connections." \
+"?m? = number of rows of H (default is N-K)\n" \
+"Returns a new code object for the given parameters.\n" \
+"For example\n\n" \
+">>> code = LDPCCode(7,4,12,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])\n"\
+"\n" \
+"would create a (7,4,3) Hamming code with the parity check matrix\n" \
+"   H= [1,1,1,0,1,0,0],\n" \
+"      [0,1,1,1,0,1,0],\n" \
+"      [0,0,1,1,1,0,1]])\n" \
+"\n" \
+"The lists of H specify that the first row as a onein the 0th, 1st, 2nd,\n" \
+"and 4th columns, etc.\n"
+
+static PythonLDPCCode*
+PythonLDPCCode_new(PythonLDPCCode* self, PyObject *args, PyObject* keywds) {
+  int n, k, m, e;
+  PyObject* eList = NULL;
+  static char* kwlist[] = {"n","k","e","H","m",NULL};
+
+  m = -1;
+  if (! PyArg_ParseTupleAndKeywords(args,keywds,"iiiO!|i",kwlist,
+      &n,&k,&e,&PyList_Type,&eList,&m)) {
+    Py_INCREF(Py_None);
+    return NULL;
+  }
+  if (m == -1) m = n-k; /* If m was not provided assume it equals n-k */
+
+  return MakeCodeFromPythonSparse(n,k,m,e,eList);
+}
+
+#define DUALLDPC_NEW__DOC__ "DualLDPCCode(n,k,e,H,m):\n" \
+"Allocates a new DualLDPCCode object based on the following arguments\n" \
+"n = number of columns in H\n" \
+"k = True dimension of H\n" \
+"e = Total number of ones in parity check matrix H, or equivalently,\n" \
+"    number of edges in the code graph.\n " \
+"H = parity check matrix as list of rows indicating connections." \
+"?m? = number of rows of H (default is N-K)\n" \
+"Returns a new code object which is dual to LDPCCode(n,k,H,M).\n" \
+
+static PythonDualLDPCCode*
+PythonDualLDPCCode_new(PythonDualLDPCCode* self, 
+		       PyObject *args, PyObject* keywds) {
+  int n, k, m, e;
+  PyObject* eList = NULL;
+  static char* kwlist[] = {"n","k","e","H","m",NULL};
+
+  m = -1;
+  if (! PyArg_ParseTupleAndKeywords(args,keywds,"iiiO!|i",kwlist,
+      &n,&k,&e,&PyList_Type,&eList,&m)) {
+    Py_INCREF(Py_None);
+    return NULL;
+  }
+  if (m == -1) m = n-k; /* If m was not provided assume it equals n-k */
+
+  return MakeDualCodeFromPythonSparse(n,k,m,e,eList);
+}
+
+
+static void
+PythonLDPCCode_dealloc(PythonLDPCCode *xp)
+{
+	DestroyCodeGraph(xp->theCode);
+	free(xp->theCode);
+	Py_XDECREF(xp->x_attr);
+	PyObject_DEL(xp);
+}
+
+static void
+PythonDualLDPCCode_dealloc(PythonDualLDPCCode *xp)
+{
+  DestroyDualCodeGraph(xp->theCode);
+  free(xp->theCode);
+  Py_XDECREF(xp->x_attr);
+  PyObject_DEL(xp);
+}
+
+#define DUALLDPC_DECODE__DOC__ "decode(verbose=0):\n" \
+"Runs a single iteration of the decoding algorithm selected when\n"\
+"the setevidence method was called.  If the optional argument\n"\
+"verbose is true, diagnostic messages are printed.\n"
+
+static PyObject *
+PythonDualLDPCCode_decode(PythonDualLDPCCode *self, PyObject *args,
+			  PyObject* keywds)
+{
+  char* result;
+  PyObject* pyResult;
+  int verbose = 0;
+  static char* kwlist[] = {"verbose",NULL};
+
+  if (!PyArg_ParseTupleAndKeywords(args,keywds,"|i",kwlist,
+				   &verbose))
+    return NULL;
+  result = self->theCode->algorithm->DoIteration(self->theCode,verbose);
+  pyResult = Py_BuildValue("s",result);
+  if (result) free(result);
+  return pyResult;
+}
+
+#define LDPC_DECODE__DOC__ "decode(verbose=0):\n" \
+"Runs a single iteration of the decoding algorithm selected when\n"\
+"the setevidence method was called.  If the optional argument\n"\
+"verbose is true, diagnostic messages are printed.\n"
+
+static PyObject *
+PythonLDPCCode_decode(PythonLDPCCode *self, PyObject *args, PyObject* keywds)
+{
+  PyObject* pyResult;
+  char*result;
+  int verbose = 0;
+  static char* kwlist[] = {"verbose",NULL};
+
+  if (!PyArg_ParseTupleAndKeywords(args,keywds,"|i",kwlist,
+				   &verbose))
+    return NULL;
+  result = self->theCode->algorithm->DoIteration(self->theCode,verbose);
+  pyResult = Py_BuildValue("s",result);
+  if (result) free(result);
+  return pyResult;
+}
+
+#define BADCHECKS__DOC__ "badchecks():\n" \
+"Returns an integer representing the number of parity check equations\n" \
+"which would fail if we made hard decisions on the current beliefs.\n"
+
+static PyObject *
+PythonLDPCCode_badchecks(PythonLDPCCode *self, PyObject *args)
+{
+
+  if (!PyArg_ParseTuple(args, ":badchecks"))
+    return NULL;
+  return PyInt_FromLong((long)self->theCode->algorithm->
+			CountBadChecks(self->theCode,0));
+}
+
+static PyObject *
+GenericGetBeliefs(PyObject *args, PyObject* keywds, const int numVNodes, 
+		  void*code,double*(GetBelFunc)(void*code,const int verbose)) {
+  int i, retVal;
+  double* ev;
+  PyObject* resultList;
+  int verbose = 0;
+  static char* kwlist[] = {"verbose",NULL};
+
+  if (!PyArg_ParseTupleAndKeywords(args,keywds,"|i",kwlist,&verbose))
+    return NULL;
+
+  resultList = PyList_New(0);
+  assert(resultList);
+  
+  ev = GetBelFunc(code,verbose);
+
+  for (i = 0; i < numVNodes; i++) {
+    if (isnan(ev[i])) retVal = PyList_Append(resultList, Py_None);
+    else retVal = PyList_Append(resultList, PyFloat_FromDouble(ev[i]));
+    assert(retVal == 0);
+  }
+  free(ev);
+  return resultList;
+}
+
+static double* GetBeliefsForCodeGraph(void* codePtr,const int verbose) {
+  CodeGraph*const theCode = codePtr;
+  return (double*) theCode->algorithm->GetBeliefs(theCode,verbose);
+}
+
+static double* GetBeliefsForDualCodeGraph(void* codePtr,const int verbose) {
+  DualCodeGraph*const theCode = codePtr;
+  return (double*) theCode->algorithm->GetBeliefs(theCode,verbose);
+}
+
+
+#define GETBELIEFS__DOC__ "getbeliefs():\n" \
+"Returns a list of floats representing the belief that each variable = 1.\n"
+
+static PyObject *
+PythonLDPCCode_getbeliefs(PythonLDPCCode *self, PyObject *args,
+			  PyObject*keywds) {
+  return GenericGetBeliefs(args,keywds,self->theCode->numVNodes,self->theCode,
+			   GetBeliefsForCodeGraph);
+}
+
+
+#define DUAL_GETBELIEFS__DOC__ "getbeliefs(verbose=0):\n" \
+"Returns a list of floats representing the log likelihood ratios for\n"\
+"the belief that each variable = 1 (i.e. large positive numbers\n"\
+"indicate a strong belief for the variable being 0 and large negative\n"\
+"numbers indicate a strong belief for the variable being 1.\n"\
+"The first k values represent the hidden variables or 'information bits'\n"\
+"which, when multiplied by the generator matrix, yield the codeword'\n"\
+"given by bits k:(k+n).\n\n"\
+"Note that if the algorithm has not converged, you should not trust\n"\
+"the result for index k through (k+n).\n"
+
+static PyObject *
+PythonDualLDPCCode_getbeliefs(PythonDualLDPCCode *self, PyObject *args,
+			      PyObject* keywds) {
+  return GenericGetBeliefs(args,keywds,self->theCode->numVNodes,self->theCode,
+			   GetBeliefsForDualCodeGraph);
+}
+
+
+static int SetAlgorithmForCodeGraph(CodeGraph*const cg,
+				    const int verbose, const char* algStr) {
+  int i;
+  char* algChoices;
+  CodeGraphAlgorithm* alg = NULL;
+  
+  if (NULL == algStr) algStr = "default";
+  for (i=0; NULL != CodeGraphAlgorithmNames[i]; i++) 
+    if (0 == strcmp(algStr,CodeGraphAlgorithmNames[i])) 
+      alg = MakeCGAlgInstance(CodeGraphAlgorithms[i]);
+  
+  if (NULL == alg) {
+    algChoices = CatStrArray(DualCodeGraphAlgorithmNames,", ");
+    PyErr_Format(PyExc_TypeError,
+		 "No algorithm named '%s' exists; options = [%s].",
+		 algStr,algChoices);
+    free(algChoices);
+    return 0;
+  }
+    
+  if (NULL != cg->algorithm) 
+    cg->algorithm->DeallocateAlgorithm(cg,verbose);
+  cg->algorithm = alg;
+  return 1;
+}
+
+
+#define LDPC_SETEVIDENCE__DOC__ "setevidence(ev,alg='default',verbose=0):\n" \
+"ev:       A list of N floats which represent channel evidence.\n"\
+"alg:      The (optional) name of an algorithm you plan to use.\n"\
+"          Options include ['default','SumProductBP','LRSumProductBP'].\n"\
+"verbose:  Indicates whether to print diagnostic messages.\n\n\n"\
+"The SumProductBP algorithm runs the standard sum-product algorithm\n"\
+"using log-likelihood-ratios and the tanh rule.\n"\
+"If you plan to use SumProductBP then the evidence should\n"\
+"represent log-likelihood-ratios of the form\n\n" \
+"   log (Pr[1|channel]/Pr[0|channel]).\n\n"\
+"The LRSumProductBP algorithm runs the standard sum-product algorithm\n"\
+"using likelihood-ratios instead of log-likelihood ratios.\n"\
+"If you plan to use LRSumProductBP then the evidence should\n"\
+"reprsent likelihood-ratios of the form\n\n"\
+"        Pr[1|channel]/Pr[0|channel].\n\n"\
+"If alg is set to an illegal value, a list of possible algorithms\n"\
+"are printed.\n"
+
+
+static PyObject *
+PythonLDPCCode_setevidence(PythonLDPCCode *self, PyObject *args,
+			   PyObject* keywds) {
+  double* evidence;
+  int verbose = 0;
+  char* algStr = NULL;
+  PyObject* eList = NULL;
+  static char* kwlist[] = {"ev","alg","verbose",NULL};
+
+  if ( (! PyArg_ParseTupleAndKeywords(args,keywds,"O!|si",kwlist,
+				      &PyList_Type, &eList,&algStr,&verbose))||
+       (! SetAlgorithmForCodeGraph(self->theCode,verbose,algStr))||
+       (NULL == (evidence = 
+		 GetPyFloatListToArrayOfDoubles("evidence",
+						self->theCode->numVNodes,
+						-999999,999999,eList)))) {
+    self->theCode->algorithm = NULL;
+    return NULL;
+  }
+  self->theCode->algorithm->SetEvidence(self->theCode,verbose,evidence);
+  self->theCode->algorithm->InitializeAlgorithm(self->theCode,verbose);
+  free(evidence);
+
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+
+
+static int SetAlgorithmForDualCodeGraph(DualCodeGraph*const dc,
+					const int verbose, 
+					const char*const algStr) {
+  int i;
+  char* algChoices;
+  DualCodeGraphAlgorithm* alg = NULL;
+  
+  for (i=0; NULL != DualCodeGraphAlgorithmNames[i]; i++) 
+    if (0 == strcmp(algStr,DualCodeGraphAlgorithmNames[i])) 
+      alg = MakeDCAlgInstance(DualCodeGraphAlgorithms[i]);
+  
+  if (NULL == alg) {
+    algChoices = CatStrArray(DualCodeGraphAlgorithmNames,", ");
+    PyErr_Format(PyExc_TypeError,
+		 "No algorithm named '%s' exists; options = [%s].",
+		 algStr,algChoices);
+    free(algChoices);
+    return 0;
+  }
+    
+  if (NULL != dc->algorithm) 
+    dc->algorithm->DeallocateAlgorithm(dc,verbose);
+  dc->algorithm = alg;
+  return 1;
+}
+
+#define DUAL_LDPC_SETEVIDENCE__DOC__ \
+"setevidence(ev,alg='default',verbose=0):\n" \
+"\n"\
+"ev:       Differential costs for quantizing a sample.\n"\
+"          Specifically, ev should be the cost of setting each sample to\n"\
+"          a 1 minus the cost of setting each sample to a 0.  For example,\n"\
+"          to model Hamming distortion, for a sample which equals 1, you\n"\
+"          would use evidence of -1 while for a 0 sample, you would use 1.\n"\
+"alg:      This optional argument indictes what type of algorithm to use\n"\
+"          when decode is called.  To see a list of allowed values, call\n"\
+"          this method with alg set to an illegal value'.\n"\
+"verbose:  This optional argument indicates whether to print informational\n"\
+"          messages about he algorithms progress and actions.\n\n"
+
+static PyObject *
+PythonDualLDPCCode_setevidence(PythonDualLDPCCode *self, PyObject *args,
+			       PyObject* keywds) {
+  double* evidence;
+  int verbose = 0;
+  char* algStr = "default";
+  PyObject* eList = NULL;
+  static char* kwlist[] = {"ev","alg","verbose",NULL};
+
+  if ( (! PyArg_ParseTupleAndKeywords(args,keywds,"O!|si",kwlist,
+				      &PyList_Type,&eList,&algStr,&verbose))||
+       (! SetAlgorithmForDualCodeGraph(self->theCode,verbose,algStr)) ||
+       (NULL == (evidence = 
+		 GetPyFloatListToArrayOfDoubles("evidence",
+						self->theCode->n,
+						-999999,999999,eList)))) {
+    self->theCode->algorithm = NULL;
+    return NULL;
+  }
+  self->theCode->algorithm->SetEvidence(self->theCode,verbose,evidence);
+  self->theCode->algorithm->InitializeAlgorithm(self->theCode,verbose);
+  free(evidence);
+
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+
+static PyMethodDef module_methods[] = {
+  {"LDPCCode",(PyCFunction)PythonLDPCCode_new,
+   METH_VARARGS|METH_KEYWORDS, LDPC_NEW__DOC__},
+  {"DualLDPCCode",(PyCFunction)PythonDualLDPCCode_new,
+   METH_VARARGS|METH_KEYWORDS, DUALLDPC_NEW__DOC__},
+  {NULL,		NULL}		/* sentinel */
+};
+
+static PyMethodDef PythonLDPCCode_methods[] = {
+  {"decode",	(PyCFunction)PythonLDPCCode_decode,
+   METH_VARARGS|METH_KEYWORDS, LDPC_DECODE__DOC__},
+  {"getbeliefs",	(PyCFunction)PythonLDPCCode_getbeliefs,
+   METH_VARARGS|METH_KEYWORDS, GETBELIEFS__DOC__},
+  {"badchecks",	(PyCFunction)PythonLDPCCode_badchecks,	
+   METH_VARARGS, BADCHECKS__DOC__},
+  {"setevidence",	(PyCFunction)PythonLDPCCode_setevidence,
+   METH_VARARGS|METH_KEYWORDS, LDPC_SETEVIDENCE__DOC__},
+  {NULL,		NULL}		/* sentinel */
+};
+
+static PyMethodDef PythonDualLDPCCode_methods[] = {
+  {"decode",	(PyCFunction)PythonDualLDPCCode_decode,
+   METH_VARARGS|METH_KEYWORDS, DUALLDPC_DECODE__DOC__},
+  {"getbeliefs",	(PyCFunction)PythonDualLDPCCode_getbeliefs,
+   METH_VARARGS|METH_KEYWORDS, DUAL_GETBELIEFS__DOC__},
+  {"setevidence",	(PyCFunction)PythonDualLDPCCode_setevidence,
+   METH_VARARGS|METH_KEYWORDS, DUAL_LDPC_SETEVIDENCE__DOC__},
+  {NULL,		NULL}		/* sentinel */
+};
+
+
+static PyObject *
+PythonLDPCCode_getattr(PythonLDPCCode *xp, char *name)
+{
+	if (xp->x_attr != NULL) {
+		PyObject *v = PyDict_GetItemString(xp->x_attr, name);
+		if (v != NULL) {
+			Py_INCREF(v);
+			return v;
+		}
+	}
+	return Py_FindMethod(PythonLDPCCode_methods, (PyObject *)xp, name);
+}
+
+static PyObject *
+PythonDualLDPCCode_getattr(PythonLDPCCode *xp, char *name)
+{
+	if (xp->x_attr != NULL) {
+		PyObject *v = PyDict_GetItemString(xp->x_attr, name);
+		if (v != NULL) {
+			Py_INCREF(v);
+			return v;
+		}
+	}
+	return Py_FindMethod(PythonDualLDPCCode_methods, (PyObject *)xp, name);
+}
+
+
+
+static int PythonLDPCCode_setattr(PythonLDPCCode *xp, char *name, PyObject *v)
+{
+	if (xp->x_attr == NULL) {
+		xp->x_attr = PyDict_New();
+		if (xp->x_attr == NULL)
+			return -1;
+	}
+	if (v == NULL) {
+		int rv = PyDict_DelItemString(xp->x_attr, name);
+		if (rv < 0)
+			PyErr_SetString(PyExc_AttributeError,
+                                        "delete non-existing LDPCCode attribute");
+		return rv;
+	}
+	else
+		return PyDict_SetItemString(xp->x_attr, name, v);
+}
+
+static PyTypeObject LDPCCodeType = {
+	PyObject_HEAD_INIT(&PyType_Type)
+	0,			/*ob_size*/
+	"LDPCCode",			/*tp_name*/
+	sizeof(PythonLDPCCode),	/*tp_basicsize*/
+	0,			/*tp_itemsize*/
+	/* methods */
+	(destructor)PythonLDPCCode_dealloc, /*tp_dealloc*/
+	0,			/*tp_print*/
+	(getattrfunc)PythonLDPCCode_getattr, /*tp_getattr*/
+	(setattrfunc)PythonLDPCCode_setattr, /*tp_setattr*/
+	0,			/*tp_compare*/
+	0,			/*tp_repr*/
+	0,			/*tp_as_number*/
+	0,			/*tp_as_sequence*/
+	0,			/*tp_as_mapping*/
+	0,			/*tp_hash*/
+};
+
+static PyTypeObject DualLDPCCodeType = {
+	PyObject_HEAD_INIT(&PyType_Type)
+	0,			/*ob_size*/
+	"DualLDPCCode",			/*tp_name*/
+	sizeof(PythonDualLDPCCode),	/*tp_basicsize*/
+	0,			/*tp_itemsize*/
+	/* methods */
+	(destructor)PythonDualLDPCCode_dealloc, /*tp_dealloc*/
+	0,			/*tp_print*/
+	(getattrfunc)PythonDualLDPCCode_getattr, /*tp_getattr*/
+	(setattrfunc)PythonLDPCCode_setattr, /*tp_setattr*/
+	0,			/*tp_compare*/
+	0,			/*tp_repr*/
+	0,			/*tp_as_number*/
+	0,			/*tp_as_sequence*/
+	0,			/*tp_as_mapping*/
+	0,			/*tp_hash*/
+};
+
+DL_EXPORT(void)
+     INIT_FUNC_NAME (void)
+{
+  LDPCCodeType.ob_type = &PyType_Type;
+  DualLDPCCodeType.ob_type = &PyType_Type;
+
+  Py_InitModule3(MODULE_NAME, module_methods,MODULE__DOC__);
+}
+

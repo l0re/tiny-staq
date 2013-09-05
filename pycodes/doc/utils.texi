@@ -1,0 +1,269 @@
+
+The utils package provides various utilities for creating,
+visualizing, and analyzing low density codes.  You can use most of
+these features even without compiling the C code in the c_src
+directory.
+
+@c Use texinfo-all-menus-update to update the menu.
+
+@c Use texinfo-every-node-update to update the nodes.
+@c After calling texinfo-every-node-update make sure
+@c to set the last two args for the first @node command
+@c to ``The pyLDPC Package'' and set the last arg for every other
+@c @node command to ``The pyLDPC Package''.  You can do the latter
+@c using the following macro:
+@c (fset 'insert-commands-for-up-field
+@c   "\C-s@node\C-e, The pyLDPC Package")
+
+@menu
+* CodeMaker.py::
+* FormLP.py::
+* visualize.py::
+@end menu
+
+@c The following examples are obtained from the pycodes.pyLDPC docstring.
+@c Update that in pyLDPC.c and then copy the result to here.
+
+@node CodeMaker.py, FormLP.py, The utils package, The utils package
+@section CodeMaker.py
+@cindex CodeMaker.py
+
+The CodeMaker package contains function to create regular and irregular
+Gallager codes.  For example, to create a 3,6 Gallager code
+of block length 30 and dimension 15, you could do
+
+@example
+>>> regL = make_H_gallager(30,3,6)
+@end example
+
+To create an irregular Gallager code with 4 variables of degree 1,
+4 variables of degree 2, 2 variables of degree 3, 3 checks of degree 2,
+and 4 checks of degree 3, you could do
+
+@example
+>>> iregL = MakeIrregularLDPCCode(10,3,@{1:4,2:4,3:2@},@{2:3,3:4@})
+@end example
+
+To create an irregular Gallager code with degree sequences
+lambda(x) = 0.33241 x^2 + 0.24632 x^3 + 0.11014 x^4 + 0.31112 x^6
+rho(x) = 0.76611 x^6 + 0.23380 x^7 you could do
+
+@example
+>>> iregL = MakeIrregularLDPCCodeFromLambdaRho(30,15,@{2:0.33241, 3:.24632, 4:.11014, 6:0.31112@},@{6:.76611, 7:.23389@})
+@end example
+
+Finally, note that although it is possible to make regular
+Gallager codes using the Irregular code functions,
+YOU SHOULD NOT DO THAT.  The irregular code functions
+only give you approximatley the degree sequence you request
+due to issues with randomly adding edges and removing
+redundant edges.
+
+
+@node FormLP.py, visualize.py, CodeMaker.py, The utils package
+@section FormLP.py
+@cindex FormLP.py
+
+This module provides the ECCLPFormer class and QuantLPFormer to
+decode a low density parity check (LDPC) error correcting code or
+quantize via the dual of an LDPC code using a linear programming
+relaxation.  The basic idea is that you instantiate an ECCLPFormer or
+QuantLPFormer and give it the code parameters.  Then you tell it to
+form an LP and either solve it or print it out.
+
+Before using this file you need to download and install the freely
+available GNU Linear Programming Kit (GLPK).  If you install the
+executable glpsol from GLPK in a weird place that is not in the path
+seen by python, set the default for the LPSolver variable in the
+__init__ method of the LPFormer base class to point to the glpsol
+executable.
+
+Some examples of how to use the ECCLPFormer and QuantLPFormer are shown
+below.
+
+@subsection Using ECCLPFormer For LP Decoding of Error Correction Codes
+@cindex ECCLPFormer Examples
+
+The following is a simple example of how to use the ECCLPFormer class
+for a parity check matrix representing the code shown below.
+
+@example
+y0  y1     y2  y3
+ =  =      =   =
+ \  |\    /|  /
+  \ | \  / | /
+   \|  \/  |/
+    +   +  +
+@end example
+
+The only two codewords for this code are 0000 and 1111.
+First we generat the ECCLPFormer class, then we use it solve for
+the optimal y0,y1,y2,y3 given the received data [1,0,1,1].
+This received data corresponds to sending 1111 and getting an
+error on the second bit.  The LP decoder correcterly decoes
+to the answer y0,y1,y2,y3 = 1,1,1,1.
+
+@example
+>>> from FormLP import *
+>>> r = ECCLPFormer(4,1,[[0,1],[1,2],[2,3]])
+>>> r.FormLP([1,0,1,1])
+>>> (v,s,o) = r.SolveLP()
+>>> print v
+[1.0, 1.0, 1.0, 1.0]
+@end example
+
+Next we do LP decoding for a medium size Gallager code assuming
+that the all zeros codeword was transmitted.  Feldman, Karger,
+and Wainwright argue that analyzing things assuming the all-0
+codeword was sent over a binary symmetric channel is valid provided
+the LP satisfies certain conditions (see their 2003 CISS paper
+for more details).  IMPORTANT: the all-0 assumption works for
+analyzing things sent over a BSC but *NOT* over an erasure channel.
+The following test takes about a minute to run on a Mac G3.
+@example
+>>> N = 1200
+>>> K = 600
+>>> numErrors = 90 # error rate of 7.5%
+>>> from FormLP import *
+>>> from CodeMaker import *
+>>> from random import *
+>>> regL = make_H_gallager(N,3,6)
+>>> origSource = [0]*N
+>>> recSource = list(origSource)
+>>> i = 0
+>>> while (i < numErrors):
+... 	index = randrange(N)
+... 	if (0 == recSource[index]):
+... 	    recSource[randrange(N)] = 1
+... 	    i = i+1
+... 
+>>> r = ECCLPFormer(N,K,regL)
+>>> r.FormLP(recSource)
+>>> (v,s,o) = r.SolveLP()
+>>> errors = map(lambda x,y: int(x) != int(y), origSource,v)
+>>> print 'num errors = ',  errors.count(1)
+num errors =  0
+@end example
+
+@subsection Using QuantLPFormer For Quanization
+@cindex QuantLPFormer Examples
+
+The following is a simple example of how to use the QuantLPFormer class
+for a generator matrix representing the code shown below.
+
+@example
+y0  y1     y2  y3
+ +  +      +   +
+ \  |\    /|  /
+  \ | \  / | /
+   \|  \/  |/
+   x0  x1  x2
+@end example
+
+First we generat the QuantLPFormer class, then we use it solve for
+the optimal x0,x1,x2 when y0,y1,y2,y3=[1,0,0,1].  The answer turns 
+out to be x0,x1,x2 = 1,1,1.
+
+@example
+>>> from FormLP import *
+>>> r = QuantLPFormer(4,3,[[0],[0,1],[1,2],[2]])
+>>> r.FormLP([1,0,0,1])
+>>> (v,s,o) = r.SolveLP()
+>>> print v
+[1.0, 1.0, 1.0]
+@end example
+
+In the following example we take the dual of a (7,4) Hamming code using the
+built in function TransposeCodeMatrix and then use that as the generator
+matrix for quantization.  In this example we quantize the
+sequence 0,*,*,*,*,*,1 where the *'s represent don't cares which can
+be reconstructed to either 0 or 1.
+
+@example 
+>>> r = QuantLPFormer(7,3,TransposeCodeMatrix(7,4,[[0,1,2,4],[1,2,3,5],[2,3,4,6]]))
+>>> r.FormLP([0,.5,.5,.5,.5,.5,1])
+>>> (v,s,o) = r.SolveLP()
+>>> print v
+[0.0, 0.0, 1.0]
+@end example
+
+Next we iteratively solve a quantization LP for a medium size code.  
+This does not seem to work all that well, but none of the other LP
+relaxations does much better at quantization either.
+
+@example
+>>> N = 300
+>>> K = 150
+>>> numErase = 180
+>>> numIter = 1000
+>>> from FormLP import *
+>>> from CodeMaker import *
+>>> from random import *
+>>> regL = make_H_gallager(N,3,6)
+>>> source = map(lambda x: round(random()),range(N))
+>>> for i in range(numErase):
+... 	source[randrange(N)] = 0.5
+... 
+>>> r = QuantLPFormer(N,K,TransposeCodeMatrix(N,K,regL))
+>>> r.FormLP(source)
+>>> (v,s,o) = r.IterSolveLP(numIter,verbose=0)
+>>> from encoders import *
+>>> recon = EncodeFromLinkArray(map(lambda x: int(x),v),N,regL)
+>>> diffs = map(lambda x,y: x != 0.5 and x != y, source,recon)
+>>> print 'num flips = ',  diffs.count(1)
+num flips =  25
+>>> if (25 != diffs.count(1)):
+... 	print 'failure may be due to diffs w/glpsol on different platforms'
+>>>
+@end example
+
+The following example illustrates what can go wrong with the LP
+relaxation in doing quantization.  Choosing v = [1.0,1.0,0.0] would
+reconstruct the source perfectly in all the unerased positions
+(places where the source is not 0.5).  But the LP relaxation produces
+the vector [1.0/3.0, 1.0/3.0, 1.0/3.0].  First, this 'solution' is
+not even binary, and second even rounding the bits would not give the
+right answer.
+
+@example
+>>> from FormLP import *
+>>> from CodeMaker import *
+>>> from random import *
+>>> hammingCode = [[0,1,2,4],[1,2,3,5],[2,3,4,6]]
+>>> source = [0.5, 0.0, 0.0, 0.5, 1.0, 0.5, 0.5]
+>>> r = QuantLPFormer(7,3,TransposeCodeMatrix(7,4,hammingCode))
+>>> r.FormErasureLP(source)
+>>> (v,s,o) = r.SolveLP()
+>>> from encoders import *
+>>> recon = EncodeFromLinkArray(map(lambda x: int(x),v),7,hammingCode)
+>>> diffs = map(lambda x,y: x != 0.5 and x != y, source,recon)
+>>> print 'num flips = ', diffs.count(1)
+num flips =  1
+@end example
+
+@node visualize.py,  , FormLP.py, The utils package
+@section visualize.py
+@cindex visualize.py
+
+The visualize package contains routines to draw a low density parity
+check code graph or the dual of a low density parity check code graph.
+The main functions to call are:
+
+@example
+VisualizeCodeGraph
+VisualizeDualCodeGraph
+@end example
+
+For example,
+
+@example
+>>> VisualizeCodeGraph(7,4,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])
+@end example
+
+will display the graph for a Hamming code, while
+
+@example
+>>> VisualizeDualCodeGraph(7,4,[[0,1,2,4],[1,2,3,5],[2,3,4,6]])
+@end example
+
+will display the graph for its dual.

@@ -1,0 +1,39 @@
+
+
+The pycodes package provides various extensions to Python which are
+useful in developing and analyzing error correcting codes and data
+compression codes (especially low density parity check codes).  The
+code was originally developed by Emin Martinian; questions and
+comments should be directed to him via @email{emin@@alum.mit.edu} or
+@email{emin63@@alum.berkeley.edu}.  For copying, modificiation, and
+distribution information, see the @ref{LICENSE}.
+
+The following modules are provided:
+@table @samp
+
+@item pyLDPC 
+Provides the main routines (which are implemented in C) as python commands.  
+
+@item utils 
+Provides utilities such as channels, encoders, routines to translate
+things into linear programming relaxations, etc.
+
+@item tests 
+Provides automated tests both to analyze/evaluate codes and decoding
+algorithms as well as to make sure everything is working correctly.
+One simple way to run a given test is by importing the appropriate
+file into python.  For example, the following commands executed in the
+directory containing the pycodes directory would run a small BEC
+quantization test:
+
+@example
+$ echo from pycodes.tests.quantization.BEC import small_BEC_perf | python
+@end example
+
+Similarly, you can run other tests in the directories
+@file{pycodes/tests/quantization/BEC},
+@file{pycodes/tests/channel_coding/BSC}, etc. by using a command like
+the one above. 
+
+@end table
+

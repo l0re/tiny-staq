@@ -1,0 +1,71 @@
+
+@c This file is obtained by adding some texinfo commands to
+@c the README file.
+
+The pycodes package provides various extensions to Python
+which are useful in developing and analyzing error correcting
+codes and data compression codes.
+
+@section Prerequisites
+
+You will need the following installed on your system to use all
+of the pycodes features:
+
+@itemize @bullet
+
+@item Python (preferably version 2.2 or later) (@uref{http://www.python.org})
+
+@item biggles (optional; only required if you want plotting) (@uref{http://biggles.sourceforge.net})
+
+@item GLPK (optinal; only required if you want to do LP relaxations) (@uref{http://www.gnu.org/software/glpk/glpk.html})
+  
+@end itemize 
+
+@section Installing
+@cindex Installing
+
+The following procedure is required to use the main iterative coding
+and decoding routines.  If you just want to use things in the utils
+directory, you do not need to compile anything.
+
+Edit the file setup.py to edit installation options (e.g., if you want
+to compile in debug mode or optimization mode.  Then, in this
+directory, execute the command
+
+@example
+$ python setup.py install
+@end example
+
+to compile the required python extensions and install them globally.  
+
+After the installation completes, you can use pycodes just like 
+any other python module.  For example, to run the regression tests
+you could start python and do
+
+@example
+>>> import pycodes, pycodes.tests
+>>> pycodes.tests.DoRegressionTests()
+@end example
+
+If you don't want to globally install pycodes, you can just compile
+it in place and use it as a local python module.  To do this,
+uncomment the lines for [build_ext] in setup.cfg and do
+
+@example
+$ python setup.py build
+@end example
+
+to compile everything.  Make sure that the name of the directory
+containing the pycodes module is named @samp{pycodes} and not
+something like @samp{pycodes-1.0}.  To use pycodes, start python in
+the directory containing the @samp{pycodes} directory.  For example,
+to run the regression tests you could do
+
+@example
+$ python
+>>> import pycodes, pycodes.tests
+>>> pycodes.tests.DoRegressionTests()
+@end example
+
+
+
