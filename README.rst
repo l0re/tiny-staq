@@ -1,4 +1,3 @@
-
 tiny-staq
 =========
 
@@ -7,8 +6,8 @@ Overview
 --------
 
 **tiny-staq** is a software stack for post-processing in quantum key distribution
-(QKD). This python implementation is intended for educational purposes and
-comes without warranty! If you need a production ready fast and high quality 
+(QKD). This python implementation is intended for educational purposes only and
+comes without any warranty! If you need a production ready fast and high quality 
 software stack, please download `ait-stack`_ and optionally ask for 
 professional support.
 
@@ -19,6 +18,8 @@ Installation:
 -------------
 
 1) Build pycodes:
+
+.. code-block:: shell
 
   > cd pycodes
   > python setup.py build
