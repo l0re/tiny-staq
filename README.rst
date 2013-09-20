@@ -56,3 +56,9 @@ License
 -------
 
 See `LICENSE <LICENSE.rst>`_
+
+
+Keywords
+--------
+
+qkd, qkd-stack, qkd protocol stack, python qkd stack, python stack
